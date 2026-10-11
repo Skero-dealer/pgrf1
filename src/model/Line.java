@@ -1,9 +1,9 @@
 package model;
 
 public class Line {
-    public final int color;
-    public final Point point1;
-    public final Point point2;
+    public int color;
+    public Point point1;
+    public Point point2;
 
     public Line(Point Point1, Point Point2, int Color) {
         this.color = Color;
