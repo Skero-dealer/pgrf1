@@ -25,25 +25,25 @@ import java.util.ArrayList;
  * @version 2026
  */
 public class Controller {
-
-    private boolean isShiftDown = false;
+    // Drawing variables
     private String currentMode;
     private Line previewLine;
     private Polygon previewPolygon;
     private ArrayList<Point> previewPolygonPoints = new ArrayList<>();
-
+    // UI
     private final Canvas canvas;
     private final JPanel controlPanel;
-
+    // Rasterizers
     private final LineRasterizer lineRasterizer;
     private final PolygonRasterizer polygonRasterizer;
-
+    // Objects
     private final ArrayList<Polygon> polygons = new ArrayList<>();
     private final ArrayList<Line> lines = new ArrayList<Line>();
+    // Customizables
     private static final int LINE_COLOR = Color.WHITE.getRGB();
-    private static final int PREVIEW_COLOR = Color.RED.getRGB();
-
     private final int NEARBY_POINT_DISTANCE = 10;
+    // States
+    private boolean isShiftDown = false;
 
 
     /*
@@ -81,11 +81,11 @@ public class Controller {
         JButton clearButton = new JButton("Clear Canvas");
         clearButton.setBackground(Color.RED);
 
-        JButton switchLineModeButton = new JButton("Current Mode: LINES");
-        switchLineModeButton.setBackground(Color.WHITE);
+        JButton switchDrawModeButton = new JButton("Current Mode: LINES");
+        switchDrawModeButton.setBackground(Color.WHITE);
 
         controlPanel.add(clearButton);
-        controlPanel.add(switchLineModeButton);
+        controlPanel.add(switchDrawModeButton);
 
         // Events
         // Control Panel
@@ -96,10 +96,10 @@ public class Controller {
             }
         });
 
-        switchLineModeButton.addActionListener(new ActionListener() {
+        switchDrawModeButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                // Tady by bylo lepší místo == dát equals, ale funguje to, takže if it ain't broken don't fix it
+                // Tady by bylo lepší místo "==" dát equals, ale funguje to, takže if it ain't broken don't fix it
                 if (currentMode == "Line") {
                     currentMode = "Polygon";
                 } else {
@@ -107,11 +107,11 @@ public class Controller {
                 }
                 previewPolygon = null;
 
-                switchLineModeButton.setText("Current Mode: " + currentMode.toUpperCase());
+                switchDrawModeButton.setText("Current Mode: " + currentMode.toUpperCase());
             }
         });
 
-        // Canvas
+        // Mouse
         canvas.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
@@ -134,7 +134,7 @@ public class Controller {
                     }
                 } else if (mouseButtonClickType == 2) {
                     // Middle Mouse button click / Delete points
-                    ClosestPoint closestPointData = getClosestPoint(e);
+                    ClosestPoint closestPointData = getClosestPoint(e); // {Polygon|Line closestObject; Point closestPoint}
                     if (closestPointData == null) return;
 
                     Object closestPointOriginObject = closestPointData.originObject;
@@ -159,7 +159,7 @@ public class Controller {
                     render();
                 } else if (mouseButtonClickType == 3) {
                     // Right Mouse button click / Move the point
-                    ClosestPoint closestPointData = getClosestPoint(e);
+                    ClosestPoint closestPointData = getClosestPoint(e); // {Polygon|Line closestObject; Point closestPoint}
                     if (closestPointData == null) return;
 
                     Object closestPointOriginObject = closestPointData.originObject;
@@ -167,19 +167,6 @@ public class Controller {
                     if (closestPointOriginObject.getClass() == Polygon.class) {
                         Polygon targetPolygon = (Polygon) closestPointOriginObject;
                         if (previewPolygon == null) {
-                            /*
-                            // We need to move the line to drag to the end of the list.
-                            for (Line polygonLine: targetPolygon.lines) {
-                                if (polygonLine.point1 == closestPointData.point || polygonLine.point2 == closestPointData.point) {
-                                    targetPolygon.lines.remove(polygonLine);
-                                    targetPolygon.lines.add(polygonLine);
-                                    break;
-                                }
-                            }
-
-                            targetPolygon.isEditing = true;
-                            previewPolygon = targetPolygon;*/
-
                             // Procházíme přes všechny pointy v každé čáře polygonu a hledáme oba body vrcholu
                             // Poté to dáme do naší proměnné "previewPolygonPoints".
                             // Tady je to teď dost confusing a nejspíš proč se to nevykresluje., mě znalosti z Javy
@@ -224,12 +211,14 @@ public class Controller {
 
             @Override
             public void mouseReleased(MouseEvent e) {
+                // Přidání nové úsečky
                 if (previewLine != null) {
                     lines.add(previewLine);
 
                     previewLine = null;
                 }
 
+                // Přidání nového polygonu
                 if (previewPolygon != null) {
                     if (!polygons.contains(previewPolygon)) {
                         polygons.add(previewPolygon);
@@ -242,7 +231,8 @@ public class Controller {
                     }
                 }
 
-                if (previewPolygonPoints.size() > 0) {
+                // Vyčistíme polygon edit cache
+                if (!previewPolygonPoints.isEmpty()) {
                     previewPolygonPoints.clear();
                 }
 
@@ -253,9 +243,11 @@ public class Controller {
         canvas.addMouseMotionListener(new MouseAdapter() {
             @Override
             public void mouseDragged(MouseEvent e) {
-                // For whatever reason, tak pokud zrovna dragguju když je mód set to Polygon, tak keyPressed simply
-                // doesn't fire at all and to top it all off MouseEvent has the .isShiftDown attribute sooooooooo
-                // that solves that java quirk!!!!
+                // For whatever reason, pokud zrovna dragguju když je mód set to Polygon, tak keyPressed simply
+                // doesn't fire at all and to top it all off MouseEvent has the .isShiftDown attribute so that solves that
+
+                // Future Vojta here: In Hindsight this might be caused by my poor implementation of Java swing, will be fixed
+                // when we do it on cvičení.
                 isShiftDown = e.isShiftDown();
 
                 // Místo porovnání režimu tady se ptáme jestli existuje Preview, protože co kdyby uživatel editoval
@@ -267,6 +259,7 @@ public class Controller {
                     lineRasterizer.rasterize(previewLine);
                 }
 
+                // Aktualizujeme polygon který kreslíme
                 if (previewPolygon != null) {
                     Line lastPreviewPolygonLine = previewPolygon.lines.getLast();
                     lastPreviewPolygonLine.point2 = getStraightPoint(e, lastPreviewPolygonLine);
@@ -275,6 +268,8 @@ public class Controller {
                     polygonRasterizer.rasterize(previewPolygon);
                 }
 
+                // Aktualizujeme body, které aktuálně editujeme u již vytvořeného polygonu
+                // Tohleto je actually neaktualizuje a nebudou dynamicky vykresleny, netuším proč
                 if (previewPolygonPoints != null) {
                     for (Point previewPoint : previewPolygonPoints) {
                         previewPoint.x = e.getX();
@@ -293,7 +288,7 @@ public class Controller {
                 isShiftDown = e.isShiftDown();
 
                 // Clear canvas upon 'C'
-                // Tohleto přestane z mi neznámého důvodu vypisovat po nějaké chvilce kreslení.
+                // Tohleto přestane, z mi neznámého důvodu, vypisovat a fungovat po nějaké chvilce kreslení.
                 System.out.println(e.getKeyChar());
                 if (e.getKeyChar() == 'c' || e.getKeyChar() == 'C') {
                     clearEntireCanvas();
@@ -333,6 +328,7 @@ public class Controller {
     private void clearEntireCanvas() {
         polygons.clear();
         lines.clear();
+        previewPolygonPoints.clear();
 
         previewLine = null;
         previewPolygon = null;
@@ -358,16 +354,8 @@ public class Controller {
             int dy = Math.abs(y2 - y1);
             int ddxy = Math.abs(dx - dy);
 
-            //System.out.println("x: " + dx + "; y: " + dy);
-            System.out.println(ddxy);
             if (ddxy < 50) {
-                // Úhlopříčka
-
-                /*
-                finalPoint.x = x2 + dy;
-                finalPoint.y = y2 + dx;
-                // Zkusil jsem
-                */
+                // Tady by normálně byl nádherný a ukázkový kód pro Úhlopříčku
             } else {
                 if (dx < dy) {
                     finalPoint.x = x1;
@@ -375,44 +363,6 @@ public class Controller {
                     finalPoint.y = y1;
                 }
             }
-
-
-
-            // THE RIGHT WAY TO DO IT
-            // Tady jsem zkoušel Trigonometrii ale vůbec nic nefungovalo!!!
-            // Keep in mind že tady previewLine == targetLine
-                        /*
-                        int x1 = previewLine.point1.x;
-                        int y1 = previewLine.point1.y;
-                        int x2 = finalPoint.x;
-                        int y2 = finalPoint.y;
-                        if (x1 > x2) {
-                            int temp = x1;
-                            x1 = x2;
-                            x2 = temp;
-                        }
-                        if (y1 > y2) {
-                            int temp = y1;
-                            y1 = y2;
-                            y2 = temp;
-                        }
-
-                        double adj = x1 - x2;
-                        double opp = y1 - y2;
-                        double hyp = Math.sqrt((x2 - x1)^2 + (y2 - y1)^2);
-
-                        if (adj == 0) {
-                            finalPoint.x = x1;
-                        } else {
-                            double ultimateAngle = Math.cos(adj / hyp);
-                            //System.out.println(ultimateAngle);
-                            if (ultimateAngle > 0) {
-                                finalPoint.x = x1;
-                            } else {
-                                finalPoint.x = x2;
-                            }
-                        }
-                        */
         }
 
         return finalPoint;
@@ -422,7 +372,7 @@ public class Controller {
         return new Point(e.getX(), e.getY());
     }
 
-    //
+    // Hledání a vracení nejbližšího bodu když chceme editovat/mazat bod
 
     class ClosestPoint {
         public Object originObject;
