@@ -1,15 +1,19 @@
 package controller;
 
-import java.awt.Color;
-import java.awt.event.*;
-import java.util.ArrayList;
-
-import graphics.rasterizer.*;
-import model.*;
+import graphics.rasterizer.BresenhamLineRasterizer;
+import graphics.rasterizer.LineRasterizer;
+import graphics.rasterizer.PolygonOutlineRasterizer;
+import graphics.rasterizer.PolygonRasterizer;
+import model.Line;
+import model.Point;
+import model.Polygon;
 import view.Canvas;
 import view.Window;
 
 import javax.swing.*;
+import java.awt.*;
+import java.awt.event.*;
+import java.util.ArrayList;
 
 /**
  * Handles user input and controls the application flow related to the
@@ -26,6 +30,7 @@ public class Controller {
     private String currentMode;
     private Line previewLine;
     private Polygon previewPolygon;
+    private ArrayList<Point> previewPolygonPoints = new ArrayList<>();
 
     private final Canvas canvas;
     private final JPanel controlPanel;
@@ -37,6 +42,8 @@ public class Controller {
     private final ArrayList<Line> lines = new ArrayList<Line>();
     private static final int LINE_COLOR = Color.WHITE.getRGB();
     private static final int PREVIEW_COLOR = Color.RED.getRGB();
+
+    private final int NEARBY_POINT_DISTANCE = 10;
 
 
     /*
@@ -94,11 +101,11 @@ public class Controller {
             public void actionPerformed(ActionEvent e) {
                 // Tady by bylo lepší místo == dát equals, ale funguje to, takže if it ain't broken don't fix it
                 if (currentMode == "Line") {
-                    previewPolygon = null;
                     currentMode = "Polygon";
                 } else {
                     currentMode = "Line";
                 }
+                previewPolygon = null;
 
                 switchLineModeButton.setText("Current Mode: " + currentMode.toUpperCase());
             }
@@ -108,32 +115,137 @@ public class Controller {
         canvas.addMouseListener(new MouseAdapter() {
             @Override
             public void mousePressed(MouseEvent e) {
-                if (currentMode == "Polygon") {
-                    if (previewPolygon == null) {
-                        ArrayList<Line> polygonLines = new ArrayList();
-                        polygonLines.add(new Line(getPoint(e), getPoint(e), LINE_COLOR));
+                int mouseButtonClickType = e.getButton();
 
-                        previewPolygon = new Polygon(polygonLines);
+                if (mouseButtonClickType == 1) {
+                    // Left Mouse button click / Draw new shape
+                    if (currentMode == "Polygon") {
+                        if (previewPolygon == null) {
+                            ArrayList<Line> polygonLines = new ArrayList<>();
+                            polygonLines.add(new Line(getPoint(e), getPoint(e), LINE_COLOR));
+
+                            previewPolygon = new Polygon(polygonLines);
+                        } else {
+                            Point startingPoint = previewPolygon.lines.getLast().point2;
+                            previewPolygon.lines.add(new Line(startingPoint, getPoint(e), LINE_COLOR));
+                        }
                     } else {
-                        Point startingPoint = previewPolygon.lines.getLast().point2;
-                        previewPolygon.lines.add(new Line(startingPoint, getPoint(e), LINE_COLOR));
+                        previewLine = new Line(getPoint(e), getPoint(e), LINE_COLOR);
                     }
-                } else {
-                    previewLine = new Line(getPoint(e), getPoint(e), LINE_COLOR);
+                } else if (mouseButtonClickType == 2) {
+                    // Middle Mouse button click / Delete points
+                    ClosestPoint closestPointData = getClosestPoint(e);
+                    if (closestPointData == null) return;
+
+                    Object closestPointOriginObject = closestPointData.originObject;
+
+                    if (closestPointOriginObject.getClass() == Polygon.class) {
+                        Polygon targetPolygon = (Polygon) closestPointOriginObject;
+                        for (Line polygonLine : targetPolygon.lines) {
+                            if (polygonLine.point1 == closestPointData.point || polygonLine.point2 == closestPointData.point) {
+                                targetPolygon.lines.remove(polygonLine);
+
+                                if (targetPolygon.lines.size() > 3) {
+                                    polygons.remove(targetPolygon);
+                                }
+                                break;
+                            }
+                        }
+                    } else {
+                        Line targetLine = (Line) closestPointOriginObject;
+                        lines.remove(targetLine);
+                    }
+
+                    render();
+                } else if (mouseButtonClickType == 3) {
+                    // Right Mouse button click / Move the point
+                    ClosestPoint closestPointData = getClosestPoint(e);
+                    if (closestPointData == null) return;
+
+                    Object closestPointOriginObject = closestPointData.originObject;
+
+                    if (closestPointOriginObject.getClass() == Polygon.class) {
+                        Polygon targetPolygon = (Polygon) closestPointOriginObject;
+                        if (previewPolygon == null) {
+                            /*
+                            // We need to move the line to drag to the end of the list.
+                            for (Line polygonLine: targetPolygon.lines) {
+                                if (polygonLine.point1 == closestPointData.point || polygonLine.point2 == closestPointData.point) {
+                                    targetPolygon.lines.remove(polygonLine);
+                                    targetPolygon.lines.add(polygonLine);
+                                    break;
+                                }
+                            }
+
+                            targetPolygon.isEditing = true;
+                            previewPolygon = targetPolygon;*/
+
+                            // Procházíme přes všechny pointy v každé čáře polygonu a hledáme oba body vrcholu
+                            // Poté to dáme do naší proměnné "previewPolygonPoints".
+                            // Tady je to teď dost confusing a nejspíš proč se to nevykresluje., mě znalosti z Javy
+                            // říkají že tam ukládám jenom reference na ten objekt, ale v tom případě by render() neměl
+                            // mít problém ten polygon prostě znovu vykreslit když s tím bodem pohybuju. But it refuses
+                            Point secondClosestPoint = new Point(1,1);
+                            for (Line polygonLine: targetPolygon.lines) {
+                                if (polygonLine.point1 == closestPointData.point || polygonLine.point2 == closestPointData.point) continue;
+
+                                if (polygonLine.point1.x == closestPointData.point.x && polygonLine.point1.y == closestPointData.point.y) {
+                                    secondClosestPoint = polygonLine.point1;
+                                    break;
+                                }
+                                if (polygonLine.point2.x == closestPointData.point.x && polygonLine.point2.y == closestPointData.point.y) {
+                                    secondClosestPoint = polygonLine.point2;
+                                    break;
+                                }
+                            }
+
+                            previewPolygonPoints.add(closestPointData.point);
+                            previewPolygonPoints.add(secondClosestPoint);
+                        }
+                    } else {
+                        Line targetLine = (Line) closestPointOriginObject;
+
+                        // Remove from the completed lines list
+                        lines.remove(targetLine);
+                        // Switch the points because the Preview takes the Point2 as end point.
+                        if (targetLine.point1 == closestPointData.point) {
+                            Point temp = targetLine.point1;
+                            targetLine.point1 = targetLine.point2;
+                            targetLine.point2 = temp;
+                        }
+
+                        previewLine = (Line) closestPointOriginObject;
+                    }
+
+                    render();
                 }
+
             }
 
             @Override
             public void mouseReleased(MouseEvent e) {
-                if (currentMode == "Line") {
+                if (previewLine != null) {
                     lines.add(previewLine);
-                } else {
+
+                    previewLine = null;
+                }
+
+                if (previewPolygon != null) {
                     if (!polygons.contains(previewPolygon)) {
                         polygons.add(previewPolygon);
                     }
+
+                    // Polygon zapouzdření demonstrace
+                    if (previewPolygon.getIsEditing()) {
+                        previewPolygon.setIsEditing(false);
+                        previewPolygon = null;
+                    }
                 }
 
-                previewLine = null;
+                if (previewPolygonPoints.size() > 0) {
+                    previewPolygonPoints.clear();
+                }
+
                 render();
             }
         });
@@ -146,18 +258,28 @@ public class Controller {
                 // that solves that java quirk!!!!
                 isShiftDown = e.isShiftDown();
 
-                // Proč místo režimu tady porovnávám preview? Protože je to zase jiný approach k této problematice
+                // Místo porovnání režimu tady se ptáme jestli existuje Preview, protože co kdyby uživatel editoval
+                // Polygon v režimu Lines.
                 if (previewLine != null) {
                     previewLine.point2 = getStraightPoint(e, previewLine);
 
                     render();
                     lineRasterizer.rasterize(previewLine);
-                } else if (previewPolygon != null) {
+                }
+
+                if (previewPolygon != null) {
                     Line lastPreviewPolygonLine = previewPolygon.lines.getLast();
                     lastPreviewPolygonLine.point2 = getStraightPoint(e, lastPreviewPolygonLine);
 
                     render();
                     polygonRasterizer.rasterize(previewPolygon);
+                }
+
+                if (previewPolygonPoints != null) {
+                    for (Point previewPoint : previewPolygonPoints) {
+                        previewPoint.x = e.getX();
+                        previewPoint.y = e.getY();
+                    }
                 }
 
                 canvas.repaint();
@@ -171,6 +293,8 @@ public class Controller {
                 isShiftDown = e.isShiftDown();
 
                 // Clear canvas upon 'C'
+                // Tohleto přestane z mi neznámého důvodu vypisovat po nějaké chvilce kreslení.
+                System.out.println(e.getKeyChar());
                 if (e.getKeyChar() == 'c' || e.getKeyChar() == 'C') {
                     clearEntireCanvas();
                 }
@@ -190,14 +314,19 @@ public class Controller {
         canvas.clear();
 
         // Render all lines
-        for (Line line : lines) {
-            lineRasterizer.rasterize(line);
+        if (!lines.isEmpty()) {
+            for (Line line : lines) {
+                lineRasterizer.rasterize(line);
+            }
         }
 
         // Render all polygons
-        for (Polygon polygon : polygons) {
-            polygonRasterizer.rasterize(polygon);
+        if (!polygons.isEmpty()) {
+            for (Polygon polygon : polygons) {
+                polygonRasterizer.rasterize(polygon);
+            }
         }
+
         canvas.repaint();
     }
 
@@ -293,4 +422,53 @@ public class Controller {
         return new Point(e.getX(), e.getY());
     }
 
+    //
+
+    class ClosestPoint {
+        public Object originObject;
+        public Point point;
+
+        public ClosestPoint(Object OriginObject, Point pointd) {
+            this.originObject = OriginObject;
+            this.point = pointd;
+        }
+    }
+
+    public static double getDistanceBetweenPoints(Point A, Point B) {
+        return Math.sqrt((B.x - A.x)^2 + (B.y - A.y)^2);
+    }
+
+    private ClosestPoint getClosestPoint(MouseEvent e) {
+        Point clickPoint = getPoint(e);
+
+        if(!lines.isEmpty()) {
+
+            for (Line line : lines) {
+                if (getDistanceBetweenPoints(clickPoint, line.point1) < NEARBY_POINT_DISTANCE) {
+                    return new ClosestPoint(line, line.point1);
+                }
+
+                if (getDistanceBetweenPoints(clickPoint, line.point2) < NEARBY_POINT_DISTANCE) {
+                    return new ClosestPoint(line, line.point2);
+                }
+            }
+        }
+
+        if (!polygons.isEmpty()) {
+
+            for (Polygon polygon : polygons) {
+                for (Line line: polygon.lines) {
+                    if (getDistanceBetweenPoints(clickPoint, line.point1) < NEARBY_POINT_DISTANCE) {
+                        return new ClosestPoint(polygon, line.point1);
+                    }
+
+                    if (getDistanceBetweenPoints(clickPoint, line.point2) < NEARBY_POINT_DISTANCE) {
+                        return new ClosestPoint(polygon, line.point2);
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
 }

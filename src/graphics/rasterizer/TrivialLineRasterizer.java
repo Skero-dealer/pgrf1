@@ -24,8 +24,6 @@ public class TrivialLineRasterizer implements LineRasterizer {
 
     private void rasterize(int x1, int y1, int x2, int y2, int color) {
 
-        // TODO: X2 = X1- vertikální čára
-
         if (x1 == x2) {
             int startY = Math.min (y1, y2);
             int endY = Math.max(y1, y2);
@@ -38,14 +36,10 @@ public class TrivialLineRasterizer implements LineRasterizer {
         int dx = Math.abs(x2 - x1);
         int dy = Math.abs(y2 - y1);
 
-        // TODO: X2 < X1 je nunté prohodit X2 a X1
-
         if (x1>x2){
             int tempX = x1; x1 = x2; x2 = tempX;
             int tempY = y1; y1 = y2; y2 = tempY;
         }
-
-        // TODO: Pokud je (y2 - y1) > (x2- x1) - jdeme po y
 
         if (dy > dx) {
             if(y1>y2) {
